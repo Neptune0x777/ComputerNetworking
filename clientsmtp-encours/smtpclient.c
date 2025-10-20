@@ -10,12 +10,12 @@
 static ssize_t recvd(int fd, char *buff, size_t len);
 static ssize_t sendall(int fd,const char *buff, size_t len);
 static ssize_t sendf(int fd,const char *buff, const char *arg);
+static int input(const char *prompt, char *buff, size_t len);
 
 int main(void)
 {
     int status = EXIT_SUCCESS;
     const char *server_name = "127.0.0.1";
-    const char *host = "client.local";
     struct sockaddr_in servaddr;
     memset(&servaddr, 0, sizeof(servaddr));
     servaddr.sin_family = AF_INET;
@@ -50,7 +50,8 @@ int main(void)
     }
     printf("220 OK\n");
     // ehlo and protocol
-    sendf(client_socket, "EHLO %s\r\n", host);
+    input("(HELO host) $ ", buffer, sizeof(buffer));
+    sendf(client_socket, "EHLO %s\r\n", buffer);
     for (;;) {
         n = recvd(client_socket, buffer, sizeof(buffer));
         if (n <= 0) goto done;
@@ -74,7 +75,9 @@ int main(void)
         }
     }
     // mailfrom
-    sendf(client_socket, "MAIL FROM:<from@test.com>\r\n", NULL);
+    input("(MAIL FROM:<e-mail>) $ ", buffer, sizeof(buffer));
+    const char *from = strdup(buffer);
+    sendf(client_socket, "MAIL FROM:<%s>\r\n", buffer);
     n = recvd(client_socket, buffer, sizeof(buffer));
     if (n <= 0) goto done;
     printf("received: %s\n", buffer);
@@ -86,7 +89,9 @@ int main(void)
     }
 
     // rcpt to
-    sendf(client_socket, "RCPT TO:<rcpt@test.com>\r\n", NULL);
+    input("(RCPT TO:<e-mail>) $ ", buffer, sizeof(buffer));
+    const char *to = strdup(buffer);
+    sendf(client_socket, "RCPT TO:<%s>\r\n", buffer);
     n = recvd(client_socket, buffer, sizeof(buffer));
     if (n <= 0) goto done;
     printf("received: %s\n", buffer);
@@ -109,14 +114,18 @@ int main(void)
         goto done;
     }
     // all data
-    const char *data = 
-        "From: from@test.com\r\n"
-        "To: rcpt@test.com\r\n"
-        "Subject: Test\r\n"
+    const char data[512];
+    input("Subject: ", buffer, sizeof(buffer));
+    const char *subject = strdup(buffer);
+    input("Message: ", buffer, sizeof(buffer));
+    const char *message = strdup(buffer);
+    snprintf(data, sizeof(data), 
+        "From: %s\r\n"
+        "To: %s\r\n"
+        "Subject: %s\r\n"
         "\r\n"
-        "Bonjour,\r\n"
-        "Test.\r\n"
-        "\r\n.\r\n";
+        "%s\r\n"
+        "\r\n.\r\n", from, to, subject, message);
     sendf(client_socket, "%s", data);
     n = recvd(client_socket, buffer, sizeof(buffer));
     if (n <= 0) goto done;
@@ -211,4 +220,14 @@ static ssize_t sendall(int fd,const char *buf, size_t len)
     }
     return (ssize_t)total;
     
+}
+static int input(const char *prompt, char *buff, size_t len) 
+{
+    printf("%s", prompt);
+    if (fgets(buff, len, stdin) == NULL) {
+        buff[0] = '\0';
+        return -1;
+    }
+    buff[strcspn(buff, "\n")] = '\0';
+    return 0;
 }
